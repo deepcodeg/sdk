@@ -2,9 +2,9 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.DotNet.Watcher.Internal;
@@ -17,8 +17,8 @@ namespace Microsoft.DotNet.Watcher
     {
         private readonly IReporter _reporter;
         private readonly ProcessRunner _processRunner;
-        private readonly DotNetWatchOptions _dotnetWatchOptions;
-        private readonly FileChangeHandler _fileChangeHandler;
+        private readonly DotNetWatchOptions _dotNetWatchOptions;
+        private readonly HotReload _hotReload;
         private readonly IWatchFilter[] _filters;
 
         public DotNetWatcher(IReporter reporter, IFileSetFactory fileSetFactory, DotNetWatchOptions dotNetWatchOptions)
@@ -27,33 +27,24 @@ namespace Microsoft.DotNet.Watcher
 
             _reporter = reporter;
             _processRunner = new ProcessRunner(reporter);
-            _dotnetWatchOptions = dotNetWatchOptions;
-            _fileChangeHandler = new FileChangeHandler(reporter);
+            _dotNetWatchOptions = dotNetWatchOptions;
+            _hotReload = new HotReload(reporter);
 
             _filters = new IWatchFilter[]
             {
                 new MSBuildEvaluationFilter(fileSetFactory),
-                new NoRestoreFilter(),
-                new LaunchBrowserFilter(dotNetWatchOptions),
+                new DotNetBuildFilter(_processRunner, _reporter),
+                new LaunchBrowserFilter(_dotNetWatchOptions),
             };
         }
 
-        public async Task WatchAsync(ProcessSpec processSpec, CancellationToken cancellationToken)
+        public async Task WatchAsync(DotNetWatchContext context, CancellationToken cancellationToken)
         {
-            Ensure.NotNull(processSpec, nameof(processSpec));
-
             var cancelledTaskSource = new TaskCompletionSource();
             cancellationToken.Register(state => ((TaskCompletionSource)state).TrySetResult(),
                 cancelledTaskSource);
 
-            var initialArguments = processSpec.Arguments.ToArray();
-            var context = new DotNetWatchContext
-            {
-                Iteration = -1,
-                ProcessSpec = processSpec,
-                Reporter = _reporter,
-                SuppressMSBuildIncrementalism = _dotnetWatchOptions.SuppressMSBuildIncrementalism,
-            };
+            var processSpec = context.ProcessSpec;
 
             if (context.SuppressMSBuildIncrementalism)
             {
@@ -63,9 +54,6 @@ namespace Microsoft.DotNet.Watcher
             while (true)
             {
                 context.Iteration++;
-
-                // Reset arguments
-                processSpec.Arguments = initialArguments;
 
                 for (var i = 0; i < _filters.Length; i++)
                 {
@@ -84,10 +72,40 @@ namespace Microsoft.DotNet.Watcher
                     return;
                 }
 
+                if (!fileSet.Project.IsNetCoreApp60OrNewer())
+                {
+                    _reporter.Error($"Hot reload based watching is only supported in .NET 6.0 or newer apps. Update the project's launchSettings.json to disable this feature.");
+                    return;
+                }
+
                 if (cancellationToken.IsCancellationRequested)
                 {
                     return;
                 }
+
+                processSpec.Executable = fileSet.Project.RunCommand;
+                processSpec.Arguments = !string.IsNullOrEmpty(fileSet.Project.RunArguments) ? fileSet.Project.RunArguments.Split(' ') : Array.Empty<string>();
+                if (!string.IsNullOrEmpty(fileSet.Project.RunWorkingDirectory))
+                {
+                    processSpec.WorkingDirectory = fileSet.Project.RunWorkingDirectory;
+                }
+
+                if (!string.IsNullOrEmpty(context.DefaultLaunchSettingsProfile.ApplicationUrl))
+                {
+                    processSpec.EnvironmentVariables["ASPNETCORE_URLS"] = context.DefaultLaunchSettingsProfile.ApplicationUrl;
+                }
+
+                if (context.DefaultLaunchSettingsProfile.EnvironmentVariables is IDictionary<string, string> envVariables)
+                {
+                    foreach (var entry in context.DefaultLaunchSettingsProfile.EnvironmentVariables)
+                    {
+                        var value = Environment.ExpandEnvironmentVariables(entry.Value);
+                        // NOTE: MSBuild variables are not expanded like they are in VS
+                        processSpec.EnvironmentVariables[entry.Key] = value;
+                    }
+                }
+
+                await _hotReload.InitializeAsync(context, cancellationToken);
 
                 using (var currentRunCancellationSource = new CancellationTokenSource())
                 using (var combinedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
@@ -109,15 +127,26 @@ namespace Microsoft.DotNet.Watcher
                         fileSetTask = fileSetWatcher.GetChangedFileAsync(combinedCancellationSource.Token);
                         finishedTask = await Task.WhenAny(processTask, fileSetTask, cancelledTaskSource.Task);
 
-                        if (finishedTask == fileSetTask
-                            && fileSetTask.Result is FileItem fileItem &&
-                            await _fileChangeHandler.TryHandleFileAction(context, fileItem, combinedCancellationSource.Token))
+                        if (finishedTask != fileSetTask || fileSetTask.Result is not FileItem fileItem)
                         {
-                            // We're able to handle the file change event without doing a full-rebuild.
+                            // The app exited.
+                            break;
                         }
                         else
                         {
-                            break;
+                            _reporter.Output($"File changed: {fileItem.FilePath}.");
+
+                            var start = Stopwatch.GetTimestamp();
+                            if (await _hotReload.TryHandleFileChange(context, fileItem, combinedCancellationSource.Token))
+                            {
+                                var totalTime = TimeSpan.FromTicks(Stopwatch.GetTimestamp() - start);
+                                _reporter.Verbose($"Successfully handled changes to {fileItem.FilePath} in {totalTime.TotalMilliseconds}ms.");
+                            }
+                            else
+                            {
+                                _reporter.Verbose($"Unable to handle changes to {fileItem.FilePath}. Rebuilding the app.");
+                                break;
+                            }
                         }
                     }
 
@@ -155,7 +184,6 @@ namespace Microsoft.DotNet.Watcher
                         Debug.Assert(finishedTask == fileSetTask);
                         var changedFile = fileSetTask.Result;
                         context.ChangedFile = changedFile;
-                        _reporter.Output($"File changed: {changedFile.Value.FilePath}");
                     }
                 }
             }

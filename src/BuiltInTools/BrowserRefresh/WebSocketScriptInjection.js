@@ -26,15 +26,21 @@ setTimeout(function () {
       setInterval(function () { document.title = glyphs[i++ % glyphs.length] + ' ' + title; }, 240);
     } else {
       const parsed = JSON.parse(message.data);
-      if (parsed.type == 'UpdateStaticFile') {
-        const path = parsed.path;
-        if (path && path.endsWith('.css')) {
-          updateCssByPath(path);
-        } else {
-          console.debug(`File change detected to css file ${path}. Reloading page...`);
-          location.reload();
-          return;
-        }
+        if (parsed.type == 'UpdateStaticFile') {
+            const path = parsed.path;
+            if (path && path.endsWith('.css')) {
+                updateCssByPath(path);
+            } else {
+                console.debug(`File change detected to css file ${path}. Reloading page...`);
+                location.reload();
+                return;
+            }
+        } else if (parsed.type == 'HotReloadDelta') {
+            window.blazor._applyHotReload(parsed);
+        } else if (parsed.type == 'HotReloadDiagnosticsv1') {
+            displayDiagnostics(parsed.diagnostics);
+        } else if (parsed.type == 'HotReloadApplied') {
+          notifyHotReloadApplied();
       }
     }
   }
@@ -86,5 +92,24 @@ setTimeout(function () {
     [...document.querySelectorAll('link')]
       .filter(l => l.baseURI === document.baseURI && l.href && l.href.indexOf('.styles.css') !== -1)
       .forEach(e => updateCssElement(e));
+  }
+
+  function displayDiagnostics(diagnostics) {
+    document.querySelectorAll('#dotnet-compile-error').forEach(el => el.remove());
+    const el = document.body.appendChild(document.createElement('div'));
+    el.id = 'dotnet-compile-error';
+    el.setAttribute('style', 'z-index:1000000; position:fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.5); color:black');
+    diagnostics.forEach(error => {
+        const item = el.appendChild(document.createElement('div'));
+        item.setAttribute('style', 'border: 2px solid red; padding: 8px; background-color: #faa;')
+        const message = item.appendChild(document.createElement('div'));
+        message.setAttribute('style', 'font-weight: bold');
+        message.textContent = error.Message;
+        item.appendChild(document.createElement('div')).textContent = `${error.File}, line ${error.Line}, column ${error.Col}`;
+    });
+  }
+
+  function notifyHotReloadApplied() {
+      document.querySelectorAll('#dotnet-compile-error').forEach(el => el.remove());
   }
 }, 500);
