@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.EditAndContinue;
@@ -44,8 +43,7 @@ namespace Microsoft.DotNet.Watcher.Tools
                 }),
             };
 
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(payload);
-            await context.BrowserRefreshServer.SendMessage(bytes, cancellationToken);
+            await context.BrowserRefreshServer.SendJsonSerlialized(payload, cancellationToken);
 
             return true;
         }
@@ -54,7 +52,7 @@ namespace Microsoft.DotNet.Watcher.Tools
 
         private readonly struct UpdatePayload
         {
-            public string Type => "HotReloadDelta";
+            public string Type => "BlazorHotReloadDeltav1";
             public IEnumerable<UpdateDelta> Deltas { get; init; }
         }
 

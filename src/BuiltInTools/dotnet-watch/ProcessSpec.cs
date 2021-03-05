@@ -16,6 +16,7 @@ namespace Microsoft.DotNet.Watcher
         public ProcessSpecEnvironmentVariables EnvironmentVariables { get; } = new();
 
         public IReadOnlyList<string> Arguments { get; set; }
+        public string EscapedArguments { get; set; }
         public OutputCapture OutputCapture { get; set; }
 
         public string ShortDisplayName()

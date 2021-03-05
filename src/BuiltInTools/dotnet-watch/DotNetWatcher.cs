@@ -84,7 +84,11 @@ namespace Microsoft.DotNet.Watcher
                 }
 
                 processSpec.Executable = fileSet.Project.RunCommand;
-                processSpec.Arguments = !string.IsNullOrEmpty(fileSet.Project.RunArguments) ? fileSet.Project.RunArguments.Split(' ') : Array.Empty<string>();
+                if (!string.IsNullOrEmpty(fileSet.Project.RunArguments))
+                {
+                    processSpec.EscapedArguments = fileSet.Project.RunArguments;
+                }
+
                 if (!string.IsNullOrEmpty(fileSet.Project.RunWorkingDirectory))
                 {
                     processSpec.WorkingDirectory = fileSet.Project.RunWorkingDirectory;

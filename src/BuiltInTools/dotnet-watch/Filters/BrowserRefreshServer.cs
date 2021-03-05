@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
@@ -24,6 +25,7 @@ namespace Microsoft.DotNet.Watcher.Tools
     {
         private readonly byte[] ReloadMessage = Encoding.UTF8.GetBytes("Reload");
         private readonly byte[] WaitMessage = Encoding.UTF8.GetBytes("Wait");
+        private readonly JsonSerializerOptions _jsonSerializerOptions = new (JsonSerializerDefaults.Web);
         private readonly List<WebSocket> _clientSockets = new();
         private readonly IReporter _reporter;
         private readonly TaskCompletionSource _taskCompletionSource;
@@ -75,6 +77,12 @@ namespace Microsoft.DotNet.Watcher.Tools
 
             _clientSockets.Add(await context.WebSockets.AcceptWebSocketAsync());
             await _taskCompletionSource.Task;
+        }
+
+        public ValueTask SendJsonSerlialized<TValue>(TValue value, CancellationToken cancellationToken = default)
+        {
+            var jsonSerialized = JsonSerializer.SerializeToUtf8Bytes(value, _jsonSerializerOptions);
+            return SendMessage(jsonSerialized, cancellationToken);
         }
 
         public async ValueTask SendMessage(ReadOnlyMemory<byte> messageBytes, CancellationToken cancellationToken = default)

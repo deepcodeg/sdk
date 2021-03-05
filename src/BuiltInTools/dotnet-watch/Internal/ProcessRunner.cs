@@ -98,7 +98,7 @@ namespace Microsoft.DotNet.Watcher.Internal
                 StartInfo =
                 {
                     FileName = processSpec.Executable,
-                    Arguments = ArgumentEscaper.EscapeAndConcatenateArgArrayForProcessStart(processSpec.Arguments),
+                    Arguments = processSpec.EscapedArguments != null ? processSpec.EscapedArguments : ArgumentEscaper.EscapeAndConcatenateArgArrayForProcessStart(processSpec.Arguments),
                     UseShellExecute = false,
                     WorkingDirectory = processSpec.WorkingDirectory,
                     RedirectStandardOutput = processSpec.IsOutputCaptured || (processSpec.OnOutput != null),

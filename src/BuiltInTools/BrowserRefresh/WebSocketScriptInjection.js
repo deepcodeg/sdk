@@ -35,8 +35,8 @@ setTimeout(function () {
                 location.reload();
                 return;
             }
-        } else if (parsed.type == 'HotReloadDelta') {
-            window.blazor._applyHotReload(parsed);
+        } else if (parsed.type == 'BlazorHotReloadDeltav1') {
+            window.Blazor._applyHotReload(parsed.deltas);
         } else if (parsed.type == 'HotReloadDiagnosticsv1') {
             displayDiagnostics(parsed.diagnostics);
         } else if (parsed.type == 'HotReloadApplied') {
@@ -111,5 +111,14 @@ setTimeout(function () {
 
   function notifyHotReloadApplied() {
       document.querySelectorAll('#dotnet-compile-error').forEach(el => el.remove());
+      if (document.querySelector('#dotnet-hotreload-toast')) {
+        return;
+      }
+      const el = document.createElement('div');
+      el.id = 'dotnet-hotreload-toast';
+      el.setAttribute('style', 'z-index:1000000; width:100%; height: 30px; font-size: large; text-align:center; position:fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.5); color:black; transition: 0.5s all ease-in-out;');
+      el.textContent = 'Updated the page';
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 520);
   }
 }, 500);

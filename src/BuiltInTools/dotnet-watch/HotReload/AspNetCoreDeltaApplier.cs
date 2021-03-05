@@ -103,7 +103,7 @@ namespace Microsoft.DotNet.Watcher.Tools
                 }
                 else if (result == ApplyResult.Success)
                 {
-                    await context.BrowserRefreshServer.SendMessage(JsonSerializer.SerializeToUtf8Bytes(new HotReloadApplied()));
+                    await context.BrowserRefreshServer.SendJsonSerlialized(new HotReloadApplied());
                 }
             }
 
@@ -114,12 +114,12 @@ namespace Microsoft.DotNet.Watcher.Tools
         {
             if (context.BrowserRefreshServer != null)
             {
-                var message = JsonSerializer.SerializeToUtf8Bytes(new HotReloadDiagnostics
+                var message = new HotReloadDiagnostics
                 {
                     Diagnostics = diagnostics
-                }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                };
 
-                await context.BrowserRefreshServer.SendMessage(message, cancellationToken);
+                await context.BrowserRefreshServer.SendJsonSerlialized(message, cancellationToken);
             }
         }
         
